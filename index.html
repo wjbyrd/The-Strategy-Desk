@@ -55,6 +55,7 @@ If you break something:
 
 <html>
 <head>
+<meta charset="UTF-8"/>
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
 <!-- Title can be changed to whatever the game needs -->
 <title>The Strategy Desk</title>
@@ -185,7 +186,7 @@ body::after{
         inset 0 0 12px rgba(0,0,0,0.78);
 }
 
-/* INPUT FOCUS — protocol activation */
+/* INPUT FOCUS — strategy activation */
 .name-input:focus{
     border-color: rgba(240,200,106,0.85);
     box-shadow:
@@ -416,7 +417,7 @@ h2 {
 }
 
 /* Strategy Desk override */
-.agency-protocol #message,
+.strategy-desk #message,
 .agency #message {
     color: #bae6fd;
     font-size: 17px;
@@ -2048,7 +2049,7 @@ TIP:
 
 
 /* =========================================
-   QUESTION GRAPH LIGHTBOX — AGENCY PROTOCOL
+   QUESTION GRAPH LIGHTBOX — STRATEGY DESK
 ========================================= */
 #questionImageBox img{
   cursor: zoom-in;
@@ -2461,8 +2462,8 @@ body.game-active #soundToggle {
 }
 
 /* =========================================
-   POST-BATTLE MASTERY REPORT — AGENCY PROTOCOL
-   Market Gate diagnostic layout with visible mastery bars.
+   POST-BATTLE MASTERY REPORT — STRATEGY DESK
+   Strategy Desk diagnostic layout with visible mastery bars.
 ========================================= */
 .mastery-report-screen{
     text-align:left;
@@ -2687,7 +2688,7 @@ Edit appearance freely.
 Respect structure strictly.
 
 ========================================= -->
-<body class="agency-protocol command-agency">
+<body class="strategy-desk command-agency">
 <!-- Screen reader announcements (accessibility — do not remove) -->
 <div aria-atomic="true" aria-live="assertive" id="srAnnouncements" style="position:absolute; left:-9999px; height:1px; width:1px; overflow:hidden;">
 </div>
@@ -3070,7 +3071,7 @@ let runID = "";
 let questionStartTime = 0;
 let streak = 0; 
 let startTime; // Will be set in startGame()
-let room = localStorage.getItem("gauntletRoom") ? parseInt(localStorage.getItem("gauntletRoom")) : 1;
+let room = localStorage.getItem("strategyDeskRoom") ? parseInt(localStorage.getItem("strategyDeskRoom")) : 1;
 let currentQuestion = null;
 let detourActive = false;
 let detourReturnRoom = null;
@@ -3237,25 +3238,6 @@ function updateMissionArtifactCountFromVault(){
         .filter(key => localStorage.getItem(key) === "true").length;
 
     setMissionArtifactCount(artifactCount);
-}
-
-function recordTimedTrialAchievementStats(accuracy, reachedRoom){
-    const safeAccuracy = Number.isFinite(Number(accuracy)) ? Number(accuracy) : 0;
-    const safeRoom = Number.isFinite(Number(reachedRoom)) ? Number(reachedRoom) : 0;
-
-    updateRealmMaxStat("strategyDeskTimedBestRoom", safeRoom);
-    updateRealmMaxStat("strategyDeskTimedBestAccuracy", safeAccuracy);
-
-    updateRealmMaxStat("managerialHub_timedBestRoom", safeRoom);
-    updateRealmMaxStat("managerialHub_timedBestAccuracy", safeAccuracy);
-
-    updateRealmMaxStat(`${getMissionAchievementPrefix()}_timedBestRoom`, safeRoom);
-    updateRealmMaxStat(`${getMissionAchievementPrefix()}_timedBestAccuracy`, safeAccuracy);
-
-    if(safeRoom >= 30 && safeAccuracy >= 80){
-        setRealmFlag(MACRO_TRIAL_BY_CLOCK_KEY);
-        setRealmFlag(`${getMissionAchievementPrefix()}_trial_by_clock_complete`);
-    }
 }
 
 function recordMacroCorrectAnswer(){
@@ -3534,7 +3516,7 @@ function saveGameState(){
     };
 
     localStorage.setItem(getSaveKey(), JSON.stringify(saveData));
-    localStorage.setItem("gauntletRoom", String(room));
+    localStorage.setItem("strategyDeskRoom", String(room));
 
     if(modeAllowsRealmProgress()){
 	    localStorage.setItem(REALM_STARTED_KEY, "true");
@@ -3597,7 +3579,7 @@ function clearSavedGame(){
     localStorage.removeItem(getSaveKey());
 
     if(modeAllowsSave()){
-        localStorage.removeItem("gauntletRoom");
+        localStorage.removeItem("strategyDeskRoom");
         localStorage.removeItem("vaultElasticityCompass");
         localStorage.removeItem("vaultSegmentationSeal");
         localStorage.removeItem("vaultBargainingLedger");
@@ -3727,100 +3709,96 @@ function getSkillBucket(question){
     return masteryState.bySkill[skill];
 }
 	 
+const STRATEGY_OBJECTIVE_BY_SKILL = Object.freeze({
+    market_demand: "LO6.1",
+    optimal_pricing: "LO6.2",
+    price_elasticity: "LO6.3",
+    forecasting_elasticities: "LO6.4",
+    stay_even_volume: "LO6.5",
+    substitute_pricing: "LO12.1",
+    complement_pricing: "LO12.2",
+    capacity_pricing: "LO12.3",
+    forecast_driven_pricing: "LO12.4",
+    promotion_response: "LO12.5",
+    behavioral_pricing: "LO12.6",
+    price_discrimination: "LO13.1",
+    direct_price_discrimination: "LO13.2",
+    arbitrage_control: "LO13.3",
+    robinson_patman: "LO13.4",
+    price_discrimination_cases: "LO13.5",
+    indirect_price_discrimination: "LO14.1",
+    versioning_and_metering: "LO14.2",
+    consumer_surplus_extraction: "LO14.3",
+    bundling: "LO14.4",
+    strategic_interdependence: "LO15.1",
+    game_timing: "LO15.2",
+    nash_equilibrium: "LO15.3",
+    strategic_rule_design: "LO15.4",
+    strategic_bargaining: "LO16.1",
+    nonstrategic_bargaining: "LO16.2"
+});
+
 function inferObjective(question){
-    if(!question) return "general";
+    if(!question) return "strategy_general";
     if(question.objective) return question.objective;
 
-    const q = (question.q || "").toLowerCase();
-    const tag = (question.tag || "general").toLowerCase();
-    const type = (question.type || "default").toLowerCase();
-
-   // =============================================
-// AGENCY PROTOCOL OBJECTIVE INFERENCE
-// Chapters 19–22: Risk, Information Asymmetry,
-// Moral Hazard, Incentives, Organizational Design
-// =============================================
-
-if(tag === "insurance" || tag === "risk" || tag === "wealth"){
-    if(q.includes("insurance") || q.includes("risk pooling")) return "LO19.1_insurance_wealth_creation";
-    if(q.includes("wealth") || q.includes("expected value")) return "LO19.1_wealth_creation";
-    return "LO19.1_insurance_wealth_creation";
+    const skill = inferSkill(question);
+    return STRATEGY_OBJECTIVE_BY_SKILL[skill] || "strategy_general";
 }
-
-if(tag === "adverse_selection" || tag === "hidden_info" || tag === "selection"){
-    if(q.includes("adverse selection")) return "LO19.2_adverse_selection";
-    if(q.includes("high risk") || q.includes("low risk")) return "LO19.2_hidden_information";
-    if(q.includes("screening")) return "LO19.4_screening";
-    if(q.includes("signaling")) return "LO19.4_signaling";
-    if(q.includes("auction") || q.includes("online")) return "LO19.5_market_solutions";
-    return "LO19.3_solutions_adverse_selection";
-}
-
-if(tag === "moral_hazard" || tag === "hidden_action"){
-    if(q.includes("moral hazard")) return "LO20.1_moral_hazard";
-    if(q.includes("shirking")) return "LO20.4_shirking";
-    if(q.includes("lending") || q.includes("loan")) return "LO20.5_lending_moral_hazard";
-    if(q.includes("monitor") || q.includes("incentive")) return "LO20.3_moral_hazard_solutions";
-    return "LO20.2_anticipate_moral_hazard";
-}
-
-if(tag === "principal_agent" || tag === "incentives" || tag === "agency"){
-    if(q.includes("principal") && q.includes("agent")) return "LO21.1_principal_agent";
-    if(q.includes("information asymmetry")) return "LO21.2_asymmetry_and_conflict";
-    if(q.includes("reduce cost") || q.includes("control")) return "LO21.3_control_conflict";
-    if(q.includes("game incentives") || q.includes("gaming")) return "LO21.5_gaming_incentives";
-    if(q.includes("analyze") || q.includes("framework")) return "LO21.6_analyze_conflict";
-    return "LO21.2_asymmetry_and_conflict";
-}
-
-if(tag === "organization" || tag === "structure" || tag === "firms"){
-    if(q.includes("transfer pricing")) return "LO22.2_transfer_pricing";
-    if(q.includes("profit center")) return "LO22.3_profit_center";
-    if(q.includes("cost center")) return "LO22.3_cost_center";
-    if(q.includes("functional")) return "LO22.4_functional_units";
-    if(q.includes("coordination")) return "LO22.5_coordination";
-    if(q.includes("multidivisional")) return "LO22.6_multidivisional_structure";
-    if(q.includes("budget") || q.includes("gaming")) return "LO22.7_budget_games";
-    return "LO22.1_parent_company_objective";
-}
-
-return `${tag}_${type}`;}
-
 
 function inferSkill(question){
     if(!question) return null;
+    if(question.primarySkill) return question.primarySkill;
+    if(question.repairSkill) return question.repairSkill;
 
     const q = (question.q || "").toLowerCase();
     const tag = (question.tag || "").toLowerCase();
 
-    if(tag === "insurance" || tag === "risk" || tag === "wealth") return "risk_transfer_pooling";
-    if(tag === "adverse_selection" || tag === "hidden_info" || tag === "selection") return "hidden_type_before_transaction";
-    if(tag === "screening") return "screening_hidden_information";
-    if(tag === "signaling") return "signaling_hidden_quality";
-    if(tag === "reputation") return "reputation_quality_signal";
+    if(STRATEGY_OBJECTIVE_BY_SKILL[tag]) return tag;
+    if(tag === "demand") return "market_demand";
+    if(tag === "elasticity") return "price_elasticity";
+    if(tag === "capacity") return "capacity_pricing";
+    if(tag === "promotion") return "promotion_response";
+    if(tag === "behavioral") return "behavioral_pricing";
+    if(tag === "regulation") return "robinson_patman";
+    if(tag === "bundling") return "bundling";
 
-    if(tag === "moral_hazard" || tag === "hidden_action") return "hidden_action_after_transaction";
-    if(tag === "monitoring") return "monitoring_hidden_action";
-    if(tag === "shirking") return "shirking_hidden_effort";
-    if(tag === "lending") return "borrower_moral_hazard";
-
-    if(tag === "principal_agent" || tag === "agency") return "principal_agent_diagnosis";
-    if(tag === "agency_costs") return "agency_control_costs";
-    if(tag === "incentives" || tag === "gaming") return "incentive_metric_gaming";
-    if(tag === "organization" || tag === "structure" || tag === "firms") return "centralization_decentralization";
-
-    if(tag === "parent_company") return "total_firm_value";
-    if(tag === "transfer_pricing") return "transfer_price_alignment";
-    if(tag === "profit_center") return "profit_center_incentives";
-    if(tag === "cost_center") return "cost_center_incentives";
-    if(tag === "functional_units") return "functional_specialization";
-    if(tag === "coordination") return "functional_coordination";
-    if(tag === "multidivisional") return "multidivisional_accountability";
-    if(tag === "budget_games") return "budget_gaming";
-
-    if(q.includes("before") && q.includes("after")) return "selection_vs_moral_hazard";
-    if(q.includes("transfer price") || q.includes("internal price")) return "transfer_price_alignment";
-    if(q.includes("budget") && (q.includes("spend") || q.includes("overstate") || q.includes("slack"))) return "budget_gaming";
+    if(tag === "pricing"){
+        return q.includes("stay-even") || q.includes("stay even") || q.includes("volume")
+            ? "stay_even_volume"
+            : "optimal_pricing";
+    }
+    if(tag === "forecasting"){
+        return q.includes("income") || q.includes("cross-price") || q.includes("advertising elasticity")
+            ? "forecasting_elasticities"
+            : "forecast_driven_pricing";
+    }
+    if(tag === "portfolio_pricing"){
+        return q.includes("complement") ? "complement_pricing" : "substitute_pricing";
+    }
+    if(tag === "segmentation"){
+        if(q.includes("arbitrage") || q.includes("resell")) return "arbitrage_control";
+        if(q.includes("direct") || q.includes("verified")) return "direct_price_discrimination";
+        if(q.includes("case") || q.includes("real-world")) return "price_discrimination_cases";
+        return "price_discrimination";
+    }
+    if(tag === "self_selection"){
+        if(q.includes("bundl")) return "bundling";
+        if(q.includes("meter") || q.includes("usage") || q.includes("damaged goods") || q.includes("version")) return "versioning_and_metering";
+        if(q.includes("surplus") || q.includes("premium tier") || q.includes("menu")) return "consumer_surplus_extraction";
+        return "indirect_price_discrimination";
+    }
+    if(tag === "game_theory" || tag === "game_design"){
+        if(q.includes("nash") || q.includes("unilateral deviation") || q.includes("best response")) return "nash_equilibrium";
+        if(q.includes("sequential") || q.includes("simultaneous") || q.includes("moves first") || q.includes("sealed bid")) return "game_timing";
+        if(tag === "game_design" || q.includes("commitment") || q.includes("rule change") || q.includes("change the game")) return "strategic_rule_design";
+        return "strategic_interdependence";
+    }
+    if(tag === "bargaining"){
+        return q.includes("nonstrategic") || q.includes("split") || q.includes("surplus") || q.includes("agreement value")
+            ? "nonstrategic_bargaining"
+            : "strategic_bargaining";
+    }
 
     return null;
 }
@@ -4178,18 +4156,18 @@ function getRecoveryLine(stage){
   }
 
   if(stage === "bridge"){
-    return "Bridge audit active. Apply the macro measure before the Protocol lets you advance.";
+    return "Bridge analysis active. Apply the strategic framework before the Desk lets you advance.";
   }
 
   if(stage === "retest"){
-    return "Retest entry reopened. Same weakness. Cleaner accounting required.";
+    return "Retest reopened. Same weakness. A cleaner strategic read is required.";
   }
 
   if(stage === "miss"){
     return "The Desk is still unstable. Repair the weakness before advancing.";
   }
 
-  return "Recovery confirmed. Return to the Protocol.";
+  return "Recovery confirmed. Return to the Strategy Desk.";
 }
 
 function getQuestionsMatchingNeed(pool, objectiveKey, tag, excludeIds = [], skillKey = null){
@@ -4913,7 +4891,7 @@ if(!hasSavedRun){
     bossesDefeatedThisRun = 0;
 
     if(modeAllowsSave()){
-        localStorage.removeItem("gauntletRoom");
+        localStorage.removeItem("strategyDeskRoom");
 	    localStorage.removeItem("vaultElasticityCompass");
 	    localStorage.removeItem("vaultSegmentationSeal");
 	    localStorage.removeItem("vaultBargainingLedger");
@@ -6437,7 +6415,7 @@ recordAdaptiveAttempt(currentQuestion, isCorrect, responseTime);
         `<span class='fade-out-text'>${getRecoveryLine("complete")}</span>`;
 
     room = returnRoom;
-    localStorage.setItem("gauntletRoom", room);
+    localStorage.setItem("strategyDeskRoom", room);
 
     setTimeout(loadQuestion, TIMING.normal);
     return;
@@ -6489,10 +6467,6 @@ recordAdaptiveAttempt(currentQuestion, isCorrect, responseTime);
            
          bossPool = [];
 
-		 if(gameMode === "standard"){
-         bossesDefeatedThisRun++;
-         }
-           
        // Boss defeated — Strategy Desk boss artifacts
     if(modeAllowsRealmProgress()){
     if(room === 10){
@@ -6528,7 +6502,7 @@ recordAdaptiveAttempt(currentQuestion, isCorrect, responseTime);
    room++;
    timedHighestRoom = Math.max(timedHighestRoom, Math.min(room, 30));
    saveGameState();
-   localStorage.setItem("gauntletRoom", room);
+   localStorage.setItem("strategyDeskRoom", room);
 
    if(gameMode === "timed" && timedModeEndTime && Date.now() >= timedModeEndTime){
        endTimedModeRun();
@@ -6654,7 +6628,7 @@ room = Math.max(bossCheckpoint, newRoom);
 
 if(gameMode === "timed") timedSetbacks++;
 
-localStorage.setItem("gauntletRoom", room);
+localStorage.setItem("strategyDeskRoom", room);
 	
 showGameModal({
     title: "Wrong Turn",
@@ -7032,61 +7006,6 @@ function handleLegendaryVictory(){
     document.getElementById("message").innerText = "Legendary completion saved separately. Standard Strategy Desk progress was not changed.";
 }
 
-function handlePracticeModeComplete(){
-    stopTimedModeClock();
-
-    const accuracy = totalAttempts > 0
-        ? Math.round((correctAnswers / totalAttempts) * 100)
-        : 0;
-
-if(gameMode === "exam"){
-    markExamDrillCompleted();
-}
-
-    sendGameData({
-        runID: runID,
-        game: "The Strategy Desk",
-        event: `${gameMode}_complete`,
-        user: username,
-        email: studentEmail,
-        room: room,
-        questionId: 0,
-        correct: 1,
-        tag: "",
-        type: "",
-        objective: "",
-        responseTime: 0,
-        attempt: totalAttempts,
-        streak: streak,
-        elapsedTime: startTime ? (Date.now() - startTime) : 0,
-        adaptiveMode: `${gameMode}_complete`,
-        totalTime: startTime ? (Date.now() - startTime) : 0,
-        accuracy: accuracy / 100,
-        maxStreak: maxStreak,
-        totalAttempts: totalAttempts
-    });
-
-    document.getElementById("bossMessage").innerText = "";
-    document.getElementById("formulaHint").innerText = "";
-    document.getElementById("artifactDrop").style.display = "none";
-
-    document.getElementById("question").innerHTML = `
-        <span class="boss-title">${getModeDisplayName().toUpperCase()} COMPLETE</span>
-        <div class="boss-q">
-            You reached the end of this practice path.<br><br>
-            Accuracy: ${accuracy}%<br>
-            Total Attempts: ${totalAttempts}<br>
-            Best Streak: ${maxStreak}
-        </div>
-    `;
-
-    document.getElementById("answers").innerHTML = `
-        <button class="continue-btn" onclick="showMasteryReportScreen()">View Mastery Report</button>
-        <button class="continue-btn" onclick="returnToModeSelectFromRun()">Choose Another Operation</button>
-    `;
-
-    document.getElementById("message").innerText = "Practice complete. The Strategy Desk record was not changed.";
-}
 
 // =============================================
 // COMPLETION CODE GENERATOR — DO NOT MODIFY
@@ -7122,17 +7041,6 @@ if(gameMode === "exam"){
 // This is NOT encryption.
 // It is a lightweight integrity check.
 // =============================================
-function generateCode(name, acc, streak, total){
-    let str = `${name}|${acc}|${streak}|${total}|STRATEGY01`;
-    let hash = 0;
-
-    for(let i = 0; i < str.length; i++){
-        hash = (hash << 5) - hash + str.charCodeAt(i);
-        hash |= 0;
-    }
-
-    return "AGENT-" + Math.abs(hash).toString(36).toUpperCase();
-} 
 
 // =============================================
 // VICTORY SCREEN — PARTIAL CUSTOMIZATION ZONE
