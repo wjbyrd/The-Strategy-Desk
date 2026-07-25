@@ -209,7 +209,7 @@ body::after{
 }
 
 /* PLACEHOLDER */
-#emailInput::placeholder,
+#localIdentity::placeholder,
 #username::placeholder{
     color: rgba(219,234,254,0.52);
     font-style: italic;
@@ -2634,6 +2634,29 @@ body.game-active #soundToggle {
     .mastery-row-main{ flex-direction:column; gap:4px; }
     .mastery-row-score{ white-space:normal; }
 }
+
+/* Instructional review cards inherit the corporate-noir mastery palette. */
+.resource-recommendation-section{ margin-top:14px; }
+.resource-recommendation-intro{ color:#bae6fd; line-height:1.55; margin:0 0 14px; overflow-wrap:anywhere; }
+.resource-recommendation-list{ display:grid; grid-template-columns:1fr; gap:12px; min-width:0; }
+.resource-card{ min-width:0; padding:16px; border:1px solid rgba(240,200,106,0.38); border-radius:11px; background:rgba(2,6,23,0.58); box-shadow:inset 0 0 18px rgba(0,0,0,0.34); }
+.resource-card-header{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; min-width:0; }
+.resource-card-title{ min-width:0; margin:0; color:#f0c86a; font-size:17px; font-weight:800; line-height:1.32; overflow-wrap:anywhere; }
+.resource-card-type{ flex:0 1 auto; max-width:100%; padding:4px 8px; border:1px solid rgba(56,189,248,0.42); border-radius:999px; color:#bae6fd; font-size:11px; font-weight:800; line-height:1.2; text-transform:uppercase; overflow-wrap:anywhere; }
+.resource-card-description{ margin:10px 0 14px; color:rgba(238,246,255,0.9); line-height:1.55; overflow-wrap:anywhere; }
+.resource-card-link{ display:inline-flex; align-items:center; justify-content:center; min-height:42px; max-width:100%; padding:9px 14px; border-radius:8px; background:linear-gradient(180deg, #1b5b79, #10364d); border:1px solid rgba(186,230,253,0.4); color:#fff; font-weight:800; text-decoration:none; box-sizing:border-box; overflow-wrap:anywhere; }
+.resource-card-link:hover{ filter:brightness(1.12); }
+.resource-card-link:focus-visible{ outline:3px solid #f0c86a; outline-offset:3px; }
+.review-materials-screen .mastery-section h2{ margin:0 0 12px; color:#f0c86a; font-size:18px; letter-spacing:.5px; }
+.review-objective-list{ margin:0; padding-left:22px; color:#e5e7eb; line-height:1.55; overflow-wrap:anywhere; }
+.sr-only{ position:absolute !important; width:1px !important; height:1px !important; padding:0 !important; margin:-1px !important; overflow:hidden !important; clip:rect(0,0,0,0) !important; white-space:nowrap !important; border:0 !important; }
+@media(max-width:420px){
+    .resource-card{ padding:14px; }
+    .resource-card-header{ flex-direction:column; gap:8px; }
+    .resource-card-type{ white-space:normal; }
+    .resource-card-link{ width:100%; }
+}
+
 </style>
 </head>
 <!-- =========================================
@@ -2700,7 +2723,6 @@ Respect structure strictly.
 <div id="startScreen">
 <div class="start-content">
 <h1 class="title">THE STRATEGY DESK</h1>
-<input class="name-input" id="emailInput" placeholder="Enter your school email" type="email"/>
 <button class="start-btn" onclick="showModeSelect()">ENTER THE STRATEGY DESK</button>
 <button class="start-btn secondary-start-btn" id="continueRunBtn" onclick="continueSavedRun()" style="display:none;">
         CONTINUE STRATEGY DESK RUN
@@ -2862,6 +2884,8 @@ or simplify this section.
    2. GAME ELEMENTS (CHANGE ELEMENTS WITH NEW GAME)
 ========================================= -->
 
+<script src="instructional_resources.js"></script>
+<script src="strategy_desk_question_bank_student.js"></script>
 <script>
 
 // =============================================
@@ -2883,8 +2907,8 @@ const finalBossMusic = new Audio('final_boss_music.mp3');
 finalBossMusic.loop = true;
 finalBossMusic.volume = 0.12; // slightly louder, it's the final fight    
     
-const sfxMilestone = new Audio('streak.wav');
-const sfxVictory = new Audio('victory.wav');
+const sfxMilestone = null;
+const sfxVictory = null;
 const sfxBossHit = new Audio('boss_hit.wav');
       sfxBossHit.volume = 0.5;
 const sfxCorrect = new Audio('ding.wav');
@@ -3045,6 +3069,14 @@ function safePlay(audio){
     });
 }
 
+function playSoundEffect(audio, volume = null){
+    if(!audio || !soundEnabled) return;
+    if(Number.isFinite(volume)) audio.volume = volume;
+    audio.pause();
+    audio.currentTime = 0;
+    safePlay(audio);
+}
+
 function resumeCurrentMusic(){
     if(typeof currentMusic !== "undefined"){
         if(currentMusic === "boss") return safePlay(bossMusic);
@@ -3105,11 +3137,14 @@ let bossCheckpoint = 1;
 let correctAnswers = 0; 
 let maxStreak = 0; 
 let username = "";
-let studentEmail = "";
 let runID = "";
 let questionStartTime = 0;
 let streak = 0; 
-let startTime; // Will be set in startGame()
+let startTime;
+let finalElapsedTimeMs = null;
+function getElapsedTimeMs(){ return Number.isFinite(finalElapsedTimeMs) ? finalElapsedTimeMs : (startTime ? (Date.now() - startTime) : 0); }
+function freezeCompletionTime(fallbackMs = 0){ if(!Number.isFinite(finalElapsedTimeMs)) finalElapsedTimeMs = startTime ? (Date.now() - startTime) : fallbackMs; return finalElapsedTimeMs; }
+let answerSubmissionPending = false; // Will be set in startGame()
 let room = 1;
 let currentQuestion = null;
 let detourActive = false;
@@ -3548,7 +3583,6 @@ function saveGameState(){
         maxStreak,
         streak,
         username,
-        studentEmail,
         runID,
         gameMode,
         conceptMemory,
@@ -3566,9 +3600,9 @@ function saveGameState(){
             bossesDefeatedThisRun
         },
         artifacts: {
-            vaultElasticityCompass: localStorage.getItem("vaultElasticityCompass") === "true",
-            vaultSegmentationSeal: localStorage.getItem("vaultSegmentationSeal") === "true",
-            vaultBargainingLedger: localStorage.getItem("vaultBargainingLedger") === "true"
+            vaultElasticityCompass: localStorage.getItem("strategyDeskVaultElasticityCompass") === "true",
+            vaultSegmentationSeal: localStorage.getItem("strategyDeskVaultSegmentationSeal") === "true",
+            vaultBargainingLedger: localStorage.getItem("strategyDeskVaultBargainingLedger") === "true"
         }
     };
 
@@ -3613,7 +3647,6 @@ function loadSavedGame(expectedMode = gameMode){
         streak = Number(saveData.streak || 0);
 
         username = saveData.username || username || "";
-        studentEmail = saveData.studentEmail || studentEmail || "";
         runID = saveData.runID || runID || "";
         gameMode = normalizedMode;
 
@@ -3635,9 +3668,9 @@ function loadSavedGame(expectedMode = gameMode){
         bossesDefeatedThisRun = Number(saveData.achievementTracking?.bossesDefeatedThisRun || 0);
 
         if(normalizedMode === "standard"){
-            if(saveData.artifacts?.vaultElasticityCompass) localStorage.setItem("vaultElasticityCompass", "true");
-            if(saveData.artifacts?.vaultSegmentationSeal) localStorage.setItem("vaultSegmentationSeal", "true");
-            if(saveData.artifacts?.vaultBargainingLedger) localStorage.setItem("vaultBargainingLedger", "true");
+            if(saveData.artifacts?.vaultElasticityCompass) localStorage.setItem("strategyDeskVaultElasticityCompass", "true");
+            if(saveData.artifacts?.vaultSegmentationSeal) localStorage.setItem("strategyDeskVaultSegmentationSeal", "true");
+            if(saveData.artifacts?.vaultBargainingLedger) localStorage.setItem("strategyDeskVaultBargainingLedger", "true");
         }
 
         return true;
@@ -3652,40 +3685,34 @@ function clearSavedGame(){
     localStorage.removeItem(getSaveKey());
 
     if(modeAllowsRealmProgress()){
-        localStorage.removeItem("vaultElasticityCompass");
-        localStorage.removeItem("vaultSegmentationSeal");
-        localStorage.removeItem("vaultBargainingLedger");
+        localStorage.removeItem("strategyDeskVaultElasticityCompass");
+        localStorage.removeItem("strategyDeskVaultSegmentationSeal");
+        localStorage.removeItem("strategyDeskVaultBargainingLedger");
     }
 }
 
-function generatePseudonymFromEmail(email) {
-    const adjectives = [
-        "Redacted", "Covert", "Blackline", "Cipher", "Ghost", "Proxy",
-        "Shadow", "Silent", "Rogue", "Obscura", "Signal", "Vector",
-        "Phantom", "Midnight", "Null", "Deep", "Gray", "Blind"
+function generatePseudonymFromSeed(seed) {
+    const titles = [
+        "Axiom", "Ledger", "Vector", "Meridian", "Signal", "Cipher",
+        "Frontier", "Equity", "Oracle", "Index", "Summit", "Nexus",
+        "Vault", "Prism", "Civic", "Astral", "Beacon", "Horizon"
     ];
-
-    const nouns = [
-        "Analyst", "Broker", "Asset", "Operative", "Handler", "Agent",
-        "Courier", "Director", "Controller", "Inspector", "Broker", "Sentinel",
-        "Informant", "Strategist", "Verifier", "Architect", "Watcher", "Counsel"
+    const roles = [
+        "Appraiser", "Cartographer", "Arbiter", "Custodian", "Warden", "Registrar",
+        "Archivist", "Surveyor", "Magistrate", "Keeper", "Analyst", "Mediator",
+        "Steward", "Scribe", "Sentinel", "Marshal", "Seeker", "Auditor"
     ];
-
     let hash = 0;
-    const cleanEmail = email.trim().toLowerCase();
-
-    for (let i = 0; i < cleanEmail.length; i++) {
-        hash = ((hash << 5) - hash) + cleanEmail.charCodeAt(i);
+    const cleanSeed = String(seed || "strategy-desk").trim().toLowerCase();
+    for (let i = 0; i < cleanSeed.length; i++) {
+        hash = ((hash << 5) - hash) + cleanSeed.charCodeAt(i);
         hash |= 0;
     }
-
     const positiveHash = Math.abs(hash);
-
-    const adj = adjectives[positiveHash % adjectives.length];
-    const noun = nouns[Math.floor(positiveHash / adjectives.length) % nouns.length];
+    const title = titles[positiveHash % titles.length];
+    const role = roles[Math.floor(positiveHash / titles.length) % roles.length];
     const number = 1000 + (positiveHash % 9000);
-
-    return `${adj}${noun}${number}`;
+    return `${title}${role}${number}`;
 }
  
 // =============================================
@@ -4783,7 +4810,7 @@ function getStrategyDeskBossLine({ isCorrect, tag, type, objective, streak, boss
 // and pre-fills the input field.
 //
 // SAFE TO EDIT:
-// - key name ("gauntletUser")
+// - key name ("strategyDeskUser")
 // - behavior (e.g., remove if you want fresh input every time)
 //
 // WARNING:
@@ -4792,44 +4819,14 @@ function getStrategyDeskBossLine({ isCorrect, tag, type, objective, streak, boss
 // Removing this will NOT break the game,
 // but will remove convenience for returning users.
 // =============================================
-const savedEmail = localStorage.getItem("gauntletEmail");
-const emailInput = document.getElementById("emailInput");
-
-if (savedEmail && emailInput) {
-    emailInput.value = savedEmail;
-}
 
 function hasSavedGame(mode = "standard"){
     return !!localStorage.getItem(`${SAVE_KEY}_${mode}`);
 }
 
-function validateAndStoreEmailForModeSelect(){
-    let inputEmail = document.getElementById("emailInput").value.trim().toLowerCase();
 
-    if (!inputEmail) {
-        alert("An email is required to enter The Strategy Desk.");
-        return false;
-    }
-
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-    if (!emailPattern.test(inputEmail)) {
-        alert("Enter a valid email address.");
-        return false;
-    }
-
-    studentEmail = inputEmail;
-    username = generatePseudonymFromEmail(studentEmail);
-
-    localStorage.setItem("gauntletEmail", studentEmail);
-    localStorage.setItem("gauntletUser", username);
-
-    return true;
-}
 
 function showModeSelect(){
-    if(!validateAndStoreEmailForModeSelect()) return;
-
     setGameControlsVisible(false);
 
     document.getElementById("startScreen").style.display = "none";
@@ -5075,35 +5072,18 @@ function startGame(shouldResume = false, requestedMode = null) {
     gameMode = launchMode;
     resetGameSurfaceForNewRun(!shouldResume);
 
-    let inputEmail = document.getElementById("emailInput").value.trim().toLowerCase();
-
-    if (!inputEmail) {
-        alert("An email is required to enter The Strategy Desk.");
-        return;
-    }
-
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-    if (!emailPattern.test(inputEmail)) {
-        alert("Enter a valid email address.");
-        return;
-    }
-
-    studentEmail = inputEmail;
-    username = generatePseudonymFromEmail(studentEmail);
-
     const hasSavedRun = shouldResume ? loadSavedGame(launchMode) : false;
     if(!hasSavedRun){
+        finalElapsedTimeMs = null;
         gameMode = launchMode;
         resumedSavedRunThisSession = false;
         bossCheckpoint = 1;
         runID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        username = generatePseudonymFromSeed(runID);
     }
-
-    localStorage.setItem("gauntletEmail", studentEmail);
-    localStorage.setItem("gauntletUser", username);
-    localStorage.setItem("gauntletRunID", runID);
-
+    if(!username) username = generatePseudonymFromSeed(runID || Date.now());
+    localStorage.setItem("strategyDeskUser", username);
+    localStorage.setItem("strategyDeskRunID", runID);
     if(modeAllowsRealmProgress()){
         localStorage.setItem(REALM_STARTED_KEY, "true");
         localStorage.setItem(REALM_STATUS_KEY, "contested");
@@ -5115,7 +5095,6 @@ function startGame(shouldResume = false, requestedMode = null) {
         game: "The Strategy Desk",
         event: hasSavedRun ? "resume" : "start",
         user: username,
-        email: studentEmail
     });
 
     if(!hasSavedRun){
@@ -5144,9 +5123,9 @@ function startGame(shouldResume = false, requestedMode = null) {
         bossesDefeatedThisRun = 0;
 
         if(modeAllowsRealmProgress()){
-            localStorage.removeItem("vaultElasticityCompass");
-            localStorage.removeItem("vaultSegmentationSeal");
-            localStorage.removeItem("vaultBargainingLedger");
+            localStorage.removeItem("strategyDeskVaultElasticityCompass");
+            localStorage.removeItem("strategyDeskVaultSegmentationSeal");
+            localStorage.removeItem("strategyDeskVaultBargainingLedger");
             localStorage.removeItem(REALM_COMPLETE_KEY);
             localStorage.setItem(REALM_STATUS_KEY, "contested");
             localStorage.setItem(REALM_ROOM_KEY, "1");
@@ -5284,6 +5263,7 @@ function showPrincipalSuspenseIntro(){
 }
 
 function resetRunStateForNewMode(){
+    finalElapsedTimeMs = null;
     stopTimedModeClock();
     timedModeEndTime = null;
     room = 1;
@@ -5413,6 +5393,9 @@ function endTimedModeRun(){
     const accuracy = totalAttempts > 0
         ? Math.round((correctAnswers / totalAttempts) * 100)
         : 0;
+    const totalTimeMs = freezeCompletionTime();
+    const timeString = formatTime(totalTimeMs);
+    const verificationCode = generateCode(username +  + "|TIMED", accuracy, maxStreak, totalTimeMs);
 
     const bestRoom = Number(localStorage.getItem("strategyDeskTimedBestRoom") || 0);
     if(timedHighestRoom > bestRoom){
@@ -5433,7 +5416,6 @@ function endTimedModeRun(){
         game: "The Strategy Desk",
         event: "timed_complete",
         user: username,
-        email: studentEmail,
         room: room,
         questionId: 0,
         correct: 1,
@@ -5448,12 +5430,14 @@ function endTimedModeRun(){
         totalTime: timedModeDurationMs,
         accuracy: accuracy / 100,
         maxStreak: maxStreak,
-        totalAttempts: totalAttempts
+        totalAttempts: totalAttempts,
+        verificationCode: verificationCode,
     });
 
     document.getElementById("bossMessage").innerText = "";
     document.getElementById("formulaHint").innerText = "";
     document.getElementById("artifactDrop").style.display = "none";
+    closeGraphLightbox();
     document.getElementById("questionImageBox").style.display = "none";
 
     document.getElementById("question").innerHTML = `
@@ -5464,11 +5448,15 @@ function endTimedModeRun(){
             Accuracy: ${accuracy}%<br>
             Total Attempts: ${totalAttempts}<br>
             Best Streak: ${maxStreak}<br>
+            Total Time: ${timeString}<br>
+            Run ID: <strong>${runID}</strong><br>
+            Verification Code: <strong>${verificationCode}</strong><br>
             Setbacks Taken: ${timedSetbacks}
         </div>
     `;
 
     document.getElementById("answers").innerHTML = `
+        <button class="continue-btn" onclick="downloadTelemetryCsv()">Download Game Data</button>
         <button class="continue-btn" onclick="showMasteryReportScreen()">View Mastery Report</button>
         <button class="continue-btn" onclick="restartTimedMode()">Retry Timed Trial</button>
         <button class="continue-btn" onclick="returnToModeSelectFromRun()">Choose Another Operation</button>
@@ -5538,7 +5526,7 @@ function getDifficultyForMode(){
 // Allows pressing Enter to start the game
 // Improves usability, does not affect logic
 // =============================================
-document.getElementById("emailInput").addEventListener("keypress", function(event) {
+document.getElementById("localIdentity").addEventListener("keypress", function(event) {
     if (event.key === "Enter") {
         event.preventDefault();
 
@@ -5698,7 +5686,8 @@ function wizardSpeak(text){
 // The question pools now live in strategy_desk_question_bank.js.
 // Keep that file beside this index.html file in the GitHub Pages root.
 // =============================================
-</script><script src="strategy_desk_question_bank.js?v=20260718_1"></script><script>
+
+
 if(!window.questionBanks){
     throw new Error("The Strategy Desk question bank did not load. Check strategy_desk_question_bank.js.");
 }
@@ -6440,8 +6429,37 @@ function checkRapidGuessing(isCorrect, responseTime){
 //
 // Check for artifact names and CHANGE
      
+async function isQuestionAnswerCorrect(question, selectedIndex){
+    if(!question || !Array.isArray(question.options)) return false;
+    const selectedOptionText = question.options[selectedIndex] ?? "";
+    if(typeof question.aHash === "string"){
+        if(typeof isPublishedAnswerCorrect !== "function"){
+            throw new Error("Published answer verification helper is missing.");
+        }
+        return isPublishedAnswerCorrect(question, selectedOptionText);
+    }
+    return Number.isInteger(question.a) && selectedIndex === question.a;
+}
 async function answer(choice) {
+    if(answerSubmissionPending || rapidGuessLocked) return;
+    answerSubmissionPending = true;
+    setAnswerButtonsDisabled(true);
     const answerSessionId = runSessionId;
+    const responseTime = Date.now() - questionStartTime;
+    let isCorrect = false;
+    try {
+        isCorrect = await isQuestionAnswerCorrect(currentQuestion, choice);
+    } catch(error) {
+        console.error("Answer verification failed:", error);
+        answerSubmissionPending = false;
+        setAnswerButtonsDisabled(false);
+        showGameModal({
+            title: "Answer Check Failed",
+            text: "The Strategy Desk could not verify this answer. Reload the local game files and try again.",
+            confirmText: "Continue"
+        });
+        return;
+    }
     // --- GLOBAL MEMORY DECAY ---
     for(let tag in conceptMemory){
     conceptMemory[tag] *= 0.95;
@@ -6452,9 +6470,6 @@ async function answer(choice) {
     const isBossRoom = isBossRoomForMode(room);
     const msgElement = document.getElementById("message");
     const wizard = document.getElementById("wizardImage");
-	const isCorrect = (choice === currentQuestion.a);
-	const responseTime = Date.now() - questionStartTime;
-
 // =============================================
 // RAPID GUESSING LOCKOUT
 // Catches button-mashing before it pollutes mastery,
@@ -6479,12 +6494,13 @@ if(rapidGuess.triggered && !rapidGuessLocked){
     sendGameData({
         runID: runID,
         game: "The Strategy Desk",
-        event: "rapid_guessing",
+        event: "question",
         user: username || "anonymous",
-        email: studentEmail || "",
         room: room,
         questionId: currentQuestion.id || 0,
-        correct: isCorrect ? 1 : 0,
+                selectedIndex: choice,
+correct: 0,
+        rapidGuessing: 1,
         tag: currentQuestion.tag || "none",
         type: currentQuestion.type || "none",
         objective: currentQuestion.objective || inferObjective(currentQuestion),
@@ -6543,10 +6559,11 @@ recordAdaptiveAttempt(currentQuestion, isCorrect, responseTime);
 		game: "The Strategy Desk",
         event: "question",
         user: username || "anonymous",
-		email: studentEmail || "",
         room: room,
         questionId: currentQuestion.id || 0,
-        correct: isCorrect ? 1 : 0,
+                selectedIndex: choice,
+correct: isCorrect ? 1 : 0,
+        rapidGuessing: 0,
         tag: currentQuestion.tag || "none",
         type: currentQuestion.type || "none",
         objective: currentQuestion.objective || inferObjective(currentQuestion),
@@ -6573,20 +6590,10 @@ recordAdaptiveAttempt(currentQuestion, isCorrect, responseTime);
     // =============================================
     if (isCorrect) {
         if(isBossRoom){
-        sfxCorrect.pause();
-        sfxCorrect.currentTime = 0;
-
-        sfxBossHit.pause();
-        sfxBossHit.currentTime = 0;
-        sfxBossHit.play().catch(()=>{});
-    } else {
-        sfxBossHit.pause();
-        sfxBossHit.currentTime = 0;
-
-        sfxCorrect.pause();
-        sfxCorrect.currentTime = 0;
-        sfxCorrect.play().catch(()=>{});
-    }
+            playSoundEffect(sfxBossHit);
+        } else {
+            playSoundEffect(sfxCorrect);
+        }
         wizardSpeak(getWizardFeedback("correct"));
        
         wizard.style.transform = "scale(1.1)";
@@ -6698,34 +6705,25 @@ recordAdaptiveAttempt(currentQuestion, isCorrect, responseTime);
         }
          // Boss defeated
 		 recordBossDefeatForAchievements();
-         sendGameData({
-            runID: runID,
-			game: "The Strategy Desk",
-            event: "boss_defeated",
-            user: username,
-		    email: studentEmail,
-            room: room
-         });
-           
-         bossPool = [];
+bossPool = [];
 
        // Boss defeated — Strategy Desk boss artifacts
     if(modeAllowsRealmProgress()){
     if(room === 10){
         document.getElementById("vaultElasticityCompass").classList.add("unlocked");
-        localStorage.setItem("vaultElasticityCompass", "true");
+        localStorage.setItem("strategyDeskVaultElasticityCompass", "true");
         showArtifact(artifacts.ledger.img, artifacts.ledger.title, artifacts.ledger.text);
     }
 
     if(room === 20){
         document.getElementById("vaultSegmentationSeal").classList.add("unlocked");
-        localStorage.setItem("vaultSegmentationSeal", "true");
+        localStorage.setItem("strategyDeskVaultSegmentationSeal", "true");
         showArtifact(artifacts.lens.img, artifacts.lens.title, artifacts.lens.text);
     }
 
     if(room === 30){
         document.getElementById("vaultBargainingLedger").classList.add("unlocked");
-        localStorage.setItem("vaultBargainingLedger", "true");
+        localStorage.setItem("strategyDeskVaultBargainingLedger", "true");
         showArtifact(artifacts.algorithm.img, artifacts.algorithm.title, artifacts.algorithm.text);
     }
 }
@@ -6757,14 +6755,9 @@ recordAdaptiveAttempt(currentQuestion, isCorrect, responseTime);
 // =============================================
        
 if (isBossRoom) {
-    sfxWrong.volume = 0.7;
     recordBossMistakeForAchievements();
-} else {
-    sfxWrong.volume = 0.5;
 }
-
-    sfxWrong.currentTime = 0;
-    sfxWrong.play().catch(() => {});
+playSoundEffect(sfxWrong, isBossRoom ? 0.7 : 0.5);
 
     wizardSpeak(getWizardFeedback("wrong"));
 
@@ -6946,8 +6939,7 @@ else if (streak === 20) {
 }
 
     if (streakMsg) {
-        sfxMilestone.currentTime = 0;
-        sfxMilestone.play();
+        playSoundEffect(sfxMilestone);
         document.getElementById("streakDisplay").innerHTML = streakMsg;
         document.getElementById("streakDisplay").style.color = streakColor;
     } else if (streak > 0) {
@@ -7178,12 +7170,12 @@ function handleLegendaryVictory(){
     bgMusic.pause();
     bossMusic.pause();
     finalBossMusic.pause();
-    if (typeof sfxVictory !== 'undefined') {
+    if (sfxVictory) {
         sfxVictory.currentTime = 0;
         sfxVictory.play();
     }
 
-    const totalTimeMs = Date.now() - startTime;
+    const totalTimeMs = freezeCompletionTime();
     const timeString = formatTime(totalTimeMs);
     const accuracy = totalAttempts > 0 ? Math.round((correctAnswers / totalAttempts) * 100) : 0;
     const verificationCode = generateCode(username + "|LEGENDARY", accuracy, maxStreak, totalTimeMs);
@@ -7193,7 +7185,6 @@ function handleLegendaryVictory(){
         game: "The Strategy Desk",
         event: "legendary_complete",
         user: username,
-        email: studentEmail,
         room: room,
         questionId: 0,
         correct: 1,
@@ -7222,6 +7213,7 @@ function handleLegendaryVictory(){
     document.getElementById("bossMessage").innerText = "";
     document.getElementById("formulaHint").innerText = "";
     document.getElementById("artifactDrop").style.display = "none";
+    closeGraphLightbox();
 
     document.getElementById("question").innerHTML = `
         <span class="boss-title">LEGENDARY MODE COMPLETE</span>
@@ -7231,11 +7223,13 @@ function handleLegendaryVictory(){
             Total Attempts: ${totalAttempts}<br>
             Best Streak: ${maxStreak}<br>
             Total Time: ${timeString}<br>
+            Run ID: <strong>${runID}</strong><br>
             Verification Code: <strong>${verificationCode}</strong>
         </div>
     `;
 
     document.getElementById("answers").innerHTML = `
+        <button class="continue-btn" onclick="downloadTelemetryCsv()">Download Game Data</button>
         <button class="continue-btn" onclick="showMasteryReportScreen()">View Mastery Report</button>
         <button class="continue-btn" onclick="returnToModeSelectFromRun()">Choose Another Operation</button>
     `;
@@ -7318,8 +7312,9 @@ function handleLegendaryVictory(){
 function handleScoreAttackVictory(){
     stopTimedModeClock();
 
-    const totalTimeMs = startTime ? (Date.now() - startTime) : 0;
+    const totalTimeMs = freezeCompletionTime();
     const timeString = formatTime(totalTimeMs);
+    const verificationCode = generateCode(username +  + "|SCORE", accuracy, maxStreak, totalTimeMs);
     const accuracy = totalAttempts > 0
         ? Math.round((correctAnswers / totalAttempts) * 100)
         : 0;
@@ -7331,7 +7326,6 @@ function handleScoreAttackVictory(){
         game: "The Strategy Desk",
         event: "score_complete",
         user: username,
-        email: studentEmail,
         room: room,
         questionId: 0,
         correct: 1,
@@ -7347,6 +7341,7 @@ function handleScoreAttackVictory(){
         accuracy: accuracy / 100,
         maxStreak: maxStreak,
         totalAttempts: totalAttempts,
+        verificationCode: verificationCode,
         score: scoreAttackScore,
         bestScore: scoreAttackBestScore,
         scoreEvents: JSON.stringify(scoreAttackEvents)
@@ -7366,6 +7361,7 @@ function handleScoreAttackVictory(){
     document.getElementById("bossMessage").innerText = "";
     document.getElementById("formulaHint").innerText = "";
     document.getElementById("artifactDrop").style.display = "none";
+    closeGraphLightbox();
     document.getElementById("questionImageBox").style.display = "none";
 
     document.getElementById("question").innerHTML = `
@@ -7377,11 +7373,15 @@ function handleScoreAttackVictory(){
             Accuracy: ${accuracy}%<br>
             Total Attempts: ${totalAttempts}<br>
             Best Streak: ${maxStreak}<br>
+            Total Time: ${timeString}<br>
+            Run ID: <strong>${runID}</strong><br>
+            Verification Code: <strong>${verificationCode}</strong><br>
             Total Time: ${timeString}
         </div>
     `;
 
     document.getElementById("answers").innerHTML = `
+        <button class="continue-btn" onclick="downloadTelemetryCsv()">Download Game Data</button>
         <button class="continue-btn" onclick="showMasteryReportScreen()">View Mastery Report</button>
         <button class="continue-btn" onclick="restartScoreAttackMode()">Retry Score Attack</button>
         <button class="continue-btn" onclick="returnToModeSelectFromRun()">Choose Another Operation</button>
@@ -7402,6 +7402,9 @@ function handlePracticeModeComplete(){
     const accuracy = totalAttempts > 0
         ? Math.round((correctAnswers / totalAttempts) * 100)
         : 0;
+    const totalTimeMs = freezeCompletionTime();
+    const timeString = formatTime(totalTimeMs);
+    const verificationCode = generateCode(username +  + "|" + String(gameMode).toUpperCase(), accuracy, maxStreak, totalTimeMs);
 
 	if(gameMode === "exam"){
  	   markExamDrillCompleted();
@@ -7412,7 +7415,6 @@ function handlePracticeModeComplete(){
         game: "The Strategy Desk",
         event: `${gameMode}_complete`,
         user: username,
-        email: studentEmail,
         room: room,
         questionId: 0,
         correct: 1,
@@ -7427,12 +7429,14 @@ function handlePracticeModeComplete(){
         totalTime: startTime ? (Date.now() - startTime) : 0,
         accuracy: accuracy / 100,
         maxStreak: maxStreak,
-        totalAttempts: totalAttempts
+        totalAttempts: totalAttempts,
+        verificationCode: verificationCode,
     });
 
     document.getElementById("bossMessage").innerText = "";
     document.getElementById("formulaHint").innerText = "";
     document.getElementById("artifactDrop").style.display = "none";
+    closeGraphLightbox();
 
     document.getElementById("question").innerHTML = `
         <span class="boss-title">${getModeDisplayName().toUpperCase()} COMPLETE</span>
@@ -7440,11 +7444,15 @@ function handlePracticeModeComplete(){
             You reached the end of this practice path.<br><br>
             Accuracy: ${accuracy}%<br>
             Total Attempts: ${totalAttempts}<br>
-            Best Streak: ${maxStreak}
+            Best Streak: ${maxStreak}<br>
+            Total Time: ${timeString}<br>
+            Run ID: <strong>${runID}</strong><br>
+            Verification Code: <strong>${verificationCode}</strong>
         </div>
     `;
 
     document.getElementById("answers").innerHTML = `
+        <button class="continue-btn" onclick="downloadTelemetryCsv()">Download Game Data</button>
         <button class="continue-btn" onclick="showMasteryReportScreen()">View Mastery Report</button>
         <button class="continue-btn" onclick="returnToModeSelectFromRun()">Choose Another Operation</button>
     `;
@@ -7530,6 +7538,7 @@ function generateCode(name, acc, streak, total){
 // =============================================
 
 function handleVictory() {
+    closeGraphLightbox();
     if(!modeAllowsRealmProgress()){
         if(gameMode === "legendary"){
             handleLegendaryVictory();
@@ -7553,12 +7562,12 @@ function handleVictory() {
 	clearSavedGame();
 	bgMusic.pause();
     bossMusic.pause();
-    if (typeof sfxVictory !== 'undefined') {
+    if (sfxVictory) {
         sfxVictory.currentTime = 0;
         sfxVictory.play();
     }
     
-    const totalTimeMs = Date.now() - startTime;
+    const totalTimeMs = freezeCompletionTime();
     const timeString = formatTime(totalTimeMs);
     const accuracy = Math.round((correctAnswers / totalAttempts) * 100);
     const verificationCode = generateCode(username, accuracy, maxStreak, totalTimeMs);
@@ -7568,7 +7577,6 @@ sendGameData({
 	game: "The Strategy Desk",
     event: "complete",
     user: username,
-	email: studentEmail,
     room: room,
     questionId: 0,
     correct: 1,
@@ -7643,7 +7651,8 @@ else if(accuracy < 75){
             <p>Strategy Record: <strong>${username}</strong></p>
             <p>Accuracy: <strong>${accuracy}%</strong> | Best Streak: <strong>${maxStreak}</strong></p>
             <p>Elapsed Time: <strong>${timeString}</strong> | Total Questions: <strong>${totalAttempts}</strong></p>
-            <p style="font-size:0.8em; color:#9ca3af;">Verification Code: <span id="vCode" style="color:#f0c86a;">${verificationCode}</span></p>
+            <p style="font-size:0.8em; color:#9ca3af;">Run ID: <strong>${runID}</strong><br>
+            Verification Code: <span id="vCode" style="color:#f0c86a;">${verificationCode}</span></p>
         </div>
 
         <p id="archivistLine" style="margin-top:20px; font-style:italic; color:${lineColor}; font-size:1.1em; text-shadow:0 0 8px rgba(56,189,248,0.35); opacity:0;">
@@ -7654,6 +7663,7 @@ else if(accuracy < 75){
             <button id="shareBtn" onclick="copyResults()" style="background:linear-gradient(180deg,#f0c86a,#9a6b1f); color:#111827; font-weight:bold; padding:12px 24px; border:1px solid rgba(255,255,255,0.25); border-radius:6px; cursor:pointer;">
                 Copy Results
             </button>
+            <button class="victory-btn mastery-btn" onclick="downloadTelemetryCsv()">Download Game Data</button>
             <button onclick="showMasteryReportScreen()" style="background:linear-gradient(180deg,#8a4f25,#3a1f14); color:#f3ead2; font-weight:bold; padding:12px 24px; border:1px solid rgba(240,199,94,0.45); border-radius:6px; cursor:pointer;">
                 View Mastery Report
             </button>
@@ -7682,7 +7692,34 @@ else if(accuracy < 75){
 // =============================================
 let latestResultsScreenHTML = "";
 
-const STRATEGY_DESK_OBJECTIVE_LABELS = (typeof objectiveLabels !== "undefined") ? objectiveLabels : {};
+const STRATEGY_DESK_OBJECTIVE_LABELS = {
+    "LO6.1": "Define individual demand and aggregate (or market) demand.",
+    "LO6.2": "Describe pricing and the steps to arrive at an optimal price.",
+    "LO6.3": "Estimate the price elasticity of demand using the appropriate formula and explain the factors affecting elasticity.",
+    "LO6.4": "Explain how to use different elasticities including income elasticity, cross-price elasticity, and advertising elasticity to forecast changes in demand.",
+    "LO6.5": "Use stay-even analysis to determine the quantity change required to offset a price change.",
+    "LO12.1": "Understand the process of pricing commonly owned substitutes.",
+    "LO12.2": "Understand the process of pricing commonly owned complements.",
+    "LO12.3": "Understand the process of setting price to fill available capacity.",
+    "LO12.4": "Infer how forecast of demands influence pricing.",
+    "LO12.5": "Interpret the role of promotional expenditure on demand and thereby, the price of a product.",
+    "LO12.6": "Investigate the role of psychological biases in formulating pricing strategy.",
+    "LO13.1": "Describe the motivation for price discrimination.",
+    "LO13.2": "Discuss the practice of direct price discrimination.",
+    "LO13.3": "Explain how arbitrage can be prevented using direct price discrimination.",
+    "LO13.4": "Describe how the Robinson-Patman Act prohibits price discrimination against small retailers.",
+    "LO13.5": "Interpret how price discrimination is implemented using real-life business cases.",
+    "LO14.1": "Explain conditions in which sellers practice indirect price discrimination.",
+    "LO14.2": "Discuss how sellers can prevent cannibalization of high-priced products using damaged good strategy and metering strategy.",
+    "LO14.3": "Identify pricing strategies that allow firms to extract more consumer surplus by encouraging customers to self-select based on willingness to pay.",
+    "LO14.4": "Explain how bundling different goods together can generate profits.",
+    "LO15.1": "Understand the use of game theory to analyze situations where the profit of one firm depends critically on the actions of others.",
+    "LO15.2": "Distinguish between sequential-move games and simultaneous-move games.",
+    "LO15.3": "Analyze the likely outcome of a game known as Nash equilibrium.",
+    "LO15.4": "Identify equilibria in different types of games and how to change the rules of the game to your advantage.",
+    "LO16.1": "Explain the strategic view of bargaining.",
+    "LO16.2": "Explain the nonstrategic view of bargaining"
+};
 
 function escapeHTML(value){
     return String(value ?? "")
@@ -7925,8 +7962,156 @@ function getMasteryReportModeName(){
     return getModeDisplayName();
 }
 
+
+// =====================================================
+// INSTRUCTIONAL RESOURCE RECOMMENDATIONS
+// =====================================================
+const INSTRUCTIONAL_RESOURCE_TYPE_LABELS = {
+    "video": "Lecture Video",
+    "worked-problem": "Worked-Problems Video",
+    "slides": "Lecture Slides",
+    "other": "Course Material"
+};
+const INSTRUCTIONAL_RESOURCE_TYPE_ORDER = {
+    "video": 1, "worked-problem": 2, "slides": 3, "other": 4
+};
+function getInstructionalResourceConfig(){
+    const config = window.INSTRUCTIONAL_RESOURCES;
+    if(!config || typeof config !== "object"){
+        console.warn("[The Strategy Desk] Instructional-resource catalog is unavailable.");
+        return null;
+    }
+    return validateInstructionalResourceConfig(config) ? config : null;
+}
+function validateInstructionalResourceConfig(config){
+    if(!config || typeof config !== "object") return false;
+    if(!config.chapters || typeof config.chapters !== "object"){
+        console.warn("[The Strategy Desk] Instructional-resource catalog has no chapters object.");
+        return false;
+    }
+    if(config.objectives && typeof config.objectives !== "object"){
+        console.warn("[The Strategy Desk] Instructional-resource objectives must be an object.");
+    }
+    return true;
+}
+function normalizeLearningObjectiveId(value){
+    const match = String(value || "").trim().match(/(?:LO\s*)?(\d+)\s*[._\-\s]\s*(\d+)/i);
+    return match ? `${Number(match[1])}.${Number(match[2])}` : null;
+}
+function getChapterFromLearningObjective(value){
+    const normalized = normalizeLearningObjectiveId(value);
+    return normalized ? normalized.split(".")[0] : null;
+}
+function getObjectiveResourceMapping(config, normalizedObjective){
+    if(!config || !config.objectives || typeof config.objectives !== "object") return null;
+    return Object.entries(config.objectives).find(([id]) => normalizeLearningObjectiveId(id) === normalizedObjective)?.[1] || null;
+}
+function isSafeInstructionalResourceUrl(value){
+    if(typeof value !== "string" || !value.trim()) return false;
+    const url = value.trim();
+    if(/^https:\/\//i.test(url)){
+        try { return new URL(url).protocol === "https:"; }
+        catch(error) { console.warn("[The Strategy Desk] Ignoring an invalid resource URL.", error); return false; }
+    }
+    return /^resources\/(?:[^\\/:?#]+\/)*[^\\/:?#]+\.(?:ppt|pptx|pdf)$/i.test(url)
+        && !/(?:^|\/)\.\.(?:\/|$)/.test(url);
+}
+function resolveInstructionalResourceById(config, resourceId){
+    if(!config || !resourceId) return null;
+    for(const chapter of Object.values(config.chapters || {})){
+        for(const resource of (Array.isArray(chapter?.resources) ? chapter.resources : [])){
+            if(resource?.id !== resourceId) continue;
+            if(typeof resource.title !== "string" || !resource.title.trim() || !isSafeInstructionalResourceUrl(resource.url)){
+                console.warn(`[The Strategy Desk] Ignoring malformed instructional resource: ${resourceId}`);
+                return null;
+            }
+            return resource;
+        }
+    }
+    console.warn(`[The Strategy Desk] Instructional resource ID was not found: ${resourceId}`);
+    return null;
+}
+function getRecommendedResources(weakObjectiveIds){
+    const config = getInstructionalResourceConfig();
+    if(!config || !Array.isArray(weakObjectiveIds) || weakObjectiveIds.length === 0) return [];
+    const settings = config.settings && typeof config.settings === "object" ? config.settings : {};
+    const maximum = Math.max(1, Math.min(3, Number(settings.maximumRecommendations) || 3));
+    const allowFallback = settings.enableChapterFallback !== false;
+    const selected = new Map();
+    function addResource(resource){
+        if(!resource?.id || selected.has(resource.id) || !isSafeInstructionalResourceUrl(resource.url)) return;
+        selected.set(resource.id, resource);
+    }
+    weakObjectiveIds.forEach(objectiveId => {
+        if(selected.size >= maximum) return;
+        const normalized = normalizeLearningObjectiveId(objectiveId);
+        if(!normalized) return;
+        const mapping = getObjectiveResourceMapping(config, normalized);
+        (Array.isArray(mapping?.resourceIds) ? mapping.resourceIds : [])
+            .map(id => resolveInstructionalResourceById(config, id)).filter(Boolean).forEach(addResource);
+        if(!allowFallback || selected.size >= maximum) return;
+        const chapter = config.chapters?.[getChapterFromLearningObjective(normalized)];
+        if(!chapter || !Array.isArray(chapter.resources)) return;
+        const fallbackResources = Array.isArray(chapter.fallbackResourceIds)
+            ? chapter.fallbackResourceIds.map(id => resolveInstructionalResourceById(config, id)).filter(Boolean)
+            : chapter.resources.slice().sort((a, b) => (Number(a?.priority) || 999) - (Number(b?.priority) || 999));
+        fallbackResources.forEach(addResource);
+    });
+    return Array.from(selected.values()).slice(0, maximum);
+}
+function getWeakLearningObjectiveIds(report){
+    return report?.hasObjectiveWeakness && Array.isArray(report.weakestObjectives)
+        ? report.weakestObjectives.map(entry => entry?.key).filter(Boolean) : [];
+}
+function getInstructionalObjectiveTitle(objectiveId){
+    const normalized = normalizeLearningObjectiveId(objectiveId);
+    const config = getInstructionalResourceConfig();
+    const mappedTitle = normalized ? getObjectiveResourceMapping(config, normalized)?.title : "";
+    return mappedTitle ? `LO ${normalized} — ${mappedTitle}` : (normalized ? `LO ${normalized}` : formatMasteryLabel(objectiveId));
+}
+function getInstructionalResourceActionLabel(resource){
+    if(typeof resource?.actionLabel === "string" && resource.actionLabel.trim()) return resource.actionLabel;
+    return resource?.type === "slides" ? "Open Slides" : "Watch Video";
+}
+function renderInstructionalResourceCards(resources){
+    return resources.map(resource => {
+        const type = INSTRUCTIONAL_RESOURCE_TYPE_LABELS[resource.type] || INSTRUCTIONAL_RESOURCE_TYPE_LABELS.other;
+        const description = typeof resource.description === "string" && resource.description.trim()
+            ? `<p class="resource-card-description">${escapeHTML(resource.description)}</p>` : "";
+        return `<article class="resource-card"><div class="resource-card-header"><h4 class="resource-card-title">${escapeHTML(resource.title)}</h4><span class="resource-card-type">${escapeHTML(type)}</span></div>${description}<a class="resource-card-link" href="${escapeHTML(resource.url)}" target="_blank" rel="noopener noreferrer">${escapeHTML(getInstructionalResourceActionLabel(resource))}<span class="sr-only">: ${escapeHTML(resource.title)}</span></a></article>`;
+    }).join("");
+}
+function renderInstructionalResourceSection(report){
+    const weakObjectives = getWeakLearningObjectiveIds(report);
+    if(!weakObjectives.length) return "";
+    const resources = getRecommendedResources(weakObjectives);
+    const intro = "Based on the weakest learning objectives in this run, start with these materials before your next attempt.";
+    if(!resources.length){
+        return `<div class="mastery-section resource-recommendation-section"><h3>Recommended Review</h3><p class="resource-recommendation-intro">${escapeHTML(intro)}</p><p class="mastery-empty">No review material is available for these objectives yet.</p></div>`;
+    }
+    return `<div class="mastery-section resource-recommendation-section"><h3>Recommended Review</h3><p class="resource-recommendation-intro">${escapeHTML(intro)}</p><div class="resource-recommendation-list">${renderInstructionalResourceCards(resources)}</div><div class="mastery-actions"><button class="continue-btn" type="button" onclick="openInstructionalReviewScreen()">Review Materials</button></div></div>`;
+}
+function openInstructionalReviewScreen(){
+    const gameBox = document.getElementById("gameBox");
+    if(!gameBox) return;
+    const report = getMasteryReportData();
+    const weakObjectives = getWeakLearningObjectiveIds(report);
+    const resources = getRecommendedResources(weakObjectives);
+    const objectiveList = weakObjectives.length
+        ? `<ul class="review-objective-list">${weakObjectives.map(id => `<li>${escapeHTML(getInstructionalObjectiveTitle(id))}</li>`).join("")}</ul>`
+        : `<p class="mastery-empty">No learning objective is available for review from this report.</p>`;
+    const resourceContent = resources.length
+        ? `<p class="resource-recommendation-intro">Based on the weakest learning objectives in this run, start with these materials before your next attempt.</p><div class="resource-recommendation-list">${renderInstructionalResourceCards(resources)}</div>`
+        : `<p class="mastery-empty">No review material is available for these objectives yet.</p>`;
+    gameBox.innerHTML = `<section id="instructionalReviewScreen" class="mastery-report-screen review-materials-screen" aria-labelledby="instructionalReviewTitle"><h1 id="instructionalReviewTitle" class="mastery-report-title" tabindex="-1">REVIEW BEFORE YOUR NEXT ATTEMPT</h1><p class="mastery-report-subtitle">Use these materials to reinforce the concepts that showed the weakest signal in this run.</p><div class="mastery-section"><h2>Learning Objectives to Review</h2>${objectiveList}</div><div class="mastery-section"><h2>Recommended Materials</h2>${resourceContent}</div><div class="mastery-actions"><button class="continue-btn" type="button" onclick="returnToMasteryReport()">Return to Mastery Report</button><button class="continue-btn secondary-modal-btn" type="button" onclick="returnToModeSelectFromRun()">Choose Another Assignment</button></div></section>`;
+    document.getElementById("instructionalReviewTitle")?.focus?.();
+}
+function returnToMasteryReport(){
+    showMasteryReportScreen(true);
+}
+
 function getMasteryReportData(){
-    const totalTimeMs = startTime ? (Date.now() - startTime) : 0;
+    const totalTimeMs = freezeCompletionTime();
     const accuracy = totalAttempts > 0 ? correctAnswers / totalAttempts : 0;
     const tagEntries = getEntriesFromBuckets(masteryState.byTag || {}, "tag");
     const objectiveEntries = getEntriesFromBuckets(masteryState.byObjective || {}, "objective");
@@ -8016,22 +8201,23 @@ function getMasteryReportData(){
     };
 }
 
-function showMasteryReportScreen(){
+function showMasteryReportScreen(preserveResultsScreen = false){
     const gameBox = document.getElementById("gameBox");
     if(!gameBox) return;
 
-    if(!document.getElementById("masteryReportScreen")){
+    if(!preserveResultsScreen && !document.getElementById("masteryReportScreen")){
         latestResultsScreenHTML = gameBox.innerHTML;
     }
 
     const report = getMasteryReportData();
+    const recommendationSection = renderInstructionalResourceSection(report);
     const scoreCard = report.score !== null
         ? `<div class="mastery-stat-card"><span class="mastery-stat-label">Score</span><span class="mastery-stat-value">${report.score}</span></div>`
         : "";
 
     gameBox.innerHTML = `
         <div id="masteryReportScreen" class="mastery-report-screen">
-            <h1 class="mastery-report-title">THE GAME ARCHITECT'S REPORT</h1>
+            <h1 class="mastery-report-title">THE PRINCIPAL'S REPORT</h1>
             <p class="mastery-report-subtitle">Post-battle mastery readout for The Strategy Desk. This is the signal behind the score.</p>
 
             <div class="mastery-summary-grid">
@@ -8059,13 +8245,15 @@ function showMasteryReportScreen(){
                 cleanText: "No major objective weakness detected. Push into Legendary Mode to see whether the signal holds under harder multi-step pressure."
             })}
 
+            ${recommendationSection}
+
             ${renderMasteryDiagnosticSection({
-                weaknessTitle: "Weakest Question Forms",
-                signalTitle: "Question Form Signals",
+                weaknessTitle: "Weakest Question Types",
+                signalTitle: "Question-Type Signals",
                 entries: report.weakestTypes,
                 hasWeakness: report.hasTypeWeakness,
                 weaknessEmptyText: "No question-type weakness was detected.",
-                cleanText: "No major question-form weakness detected. The next useful test is harder prompts, closer traps, and less obvious wording."
+                cleanText: "No major question-type weakness detected. The next useful test is harder prompts, closer traps, and less obvious wording."
             })}
 
             ${renderMasteryDiagnosticSection({
@@ -8108,6 +8296,7 @@ function showMasteryReportScreen(){
             </div>
 
             <div class="mastery-actions">
+                <button class="continue-btn" onclick="downloadTelemetryCsv()">Download Game Data</button>
                 <button class="continue-btn" onclick="copyMasteryReport()">Copy Report</button>
                 ${report.noMajorWeakness && gameMode !== "legendary" ? `<button class="continue-btn" onclick="startSelectedMode('legendary')">Enter Legendary Mode</button>` : ""}
                 <button class="continue-btn secondary-modal-btn" onclick="restoreResultsScreen()">Back to Results</button>
@@ -8131,9 +8320,9 @@ function restoreResultsScreen(){
 
 function copyMasteryReport(){
     const report = getMasteryReportData();
-
+    const reviewResources = getRecommendedResources(getWeakLearningObjectiveIds(report));
     const lines = [
-        "The Strategy Desk — Game Architect's Mastery Report",
+        "The Strategy Desk — Principal's Mastery Report",
         `Student: ${username}`,
         `Mode: ${report.mode}`,
         `Accuracy: ${formatPercent(report.accuracy)} (${report.correctAnswers}/${report.totalAttempts})`,
@@ -8147,33 +8336,37 @@ function copyMasteryReport(){
         report.hasObjectiveWeakness ? "Weakest Learning Objectives:" : "Objective Signals:",
         ...(report.hasObjectiveWeakness && report.weakestObjectives.length ? report.weakestObjectives.map(item => `- ${item.label}: ${formatPercent(item.accuracy)} (${item.correct}/${item.attempts})`) : ["- No major objective weakness detected. Try Legendary Mode next."]),
         "",
-        report.hasTypeWeakness ? "Weakest Question Forms:" : "Question Form Signals:",
-        ...(report.hasTypeWeakness && report.weakestTypes.length ? report.weakestTypes.map(item => `- ${item.label}: ${formatPercent(item.accuracy)} (${item.correct}/${item.attempts})`) : ["- No major question-form weakness detected."]),
+        report.hasTypeWeakness ? "Weakest Question Types:" : "Question-Type Signals:",
+        ...(report.hasTypeWeakness && report.weakestTypes.length ? report.weakestTypes.map(item => `- ${item.label}: ${formatPercent(item.accuracy)} (${item.correct}/${item.attempts})`) : ["- No major weakness was detected across question types."]),
         "",
         report.hasSkillWeakness ? "Weakest Skills:" : "Skill Signals:",
         ...(report.hasSkillWeakness && report.weakestSkills.length ? report.weakestSkills.map(item => `- ${item.label}: ${formatPercent(item.accuracy)} (${item.correct}/${item.attempts})`) : ["- No major skill weakness detected."]),
         "",
         "Next Moves:",
-        ...report.nextSteps.map(step => `- ${step}`)
+        ...report.nextSteps.map(step => `- ${step}`),
+        "",
+        "Recommended Review:",
+        ...(reviewResources.length
+            ? reviewResources.flatMap(resource => [
+                `- ${resource.title}`,
+                `  Type: ${INSTRUCTIONAL_RESOURCE_TYPE_LABELS[resource.type] || INSTRUCTIONAL_RESOURCE_TYPE_LABELS.other}`,
+                `  URL: ${resource.url}`
+            ])
+            : ["- No review material is available for the current objective signals."])
     ].filter(line => line !== null);
-
     const text = lines.join("\n");
-
     function markCopied(){
         const btn = Array.from(document.querySelectorAll("button"))
             .find(button => button.innerText === "Copy Report" || button.innerText === "Copied!");
-
         if(!btn) return;
         const original = btn.innerText;
         btn.innerText = "Copied!";
         scheduleForCurrentRun(() => { btn.innerText = original; }, 1800);
     }
-
     if(navigator.clipboard && navigator.clipboard.writeText){
         navigator.clipboard.writeText(text).then(markCopied);
         return;
     }
-
     const temp = document.createElement("textarea");
     temp.value = text;
     document.body.appendChild(temp);
@@ -8281,7 +8474,7 @@ function formatTime(ms) {
 // Removing those will break this function.
 // =============================================     
 function copyResults() {
-    const totalTimeMs = Date.now() - startTime;
+    const totalTimeMs = freezeCompletionTime();
     const timeString = formatTime(totalTimeMs);
     const code = document.getElementById("vCode").innerText;
     const accuracy = Math.round((correctAnswers / totalAttempts) * 100);
@@ -8292,6 +8485,7 @@ Time: ${timeString}
 Accuracy: ${accuracy}%
 Best Streak: ${maxStreak}
 Total Questions: ${totalAttempts}
+Run ID: ${runID}
 Code: ${code}
 Verified by The Game Architect`;
 
@@ -8310,49 +8504,120 @@ Verified by The Game Architect`;
     });
 }
 
-function sendGameData(data) {
-  const payload = {
-    timestamp: new Date().toISOString(),
-    runID: data.runID || localStorage.getItem("gauntletRunID") || "",
-    token: data.token || "",
-    version: "StrategyDesk-ms-telemetry-v1.0",
-    userAgent: navigator.userAgent || "",
-    game: data.game || "The Strategy Desk",
-    mode: data.mode || gameMode || "standard",
-    event: data.event || "",
-    user: data.user || username || "anonymous",
-	email: studentEmail || "",  
-    room: Number(data.room ?? 0),
-    questionId: Number(data.questionId ?? data.question ?? 0),
-    correct: Number(data.correct ?? 0),
-    tag: data.tag || "",
-    type: data.type || "",
-    objective: data.objective || "",
-    responseTime: Number(data.responseTime ?? data.responseTimeMs ?? 0),
-    attempt: Number(data.attempt ?? 0),
-    streak: Number(data.streak ?? 0),
-    elapsedTime: Number(data.elapsedTime ?? data.elapsedTimeMs ?? 0),
-    adaptiveMode: data.adaptiveMode || adaptiveMode || "",
-    totalTime: Number(data.totalTime ?? data.totalTimeMs ?? 0),
-    accuracy: Number(data.accuracy ?? 0),
-    maxStreak: Number(data.maxStreak ?? 0),
-    totalAttempts: Number(data.totalAttempts ?? data.attempts ?? 0),
-    verificationCode: data.verificationCode || data.code || "",
-
-    // SCORE ATTACK MODE ADDITION:
-    // These fields are blank/zero outside Score Attack unless passed explicitly.
-    score: Number(data.score ?? scoreAttackScore ?? 0),
-    bestScore: Number(data.bestScore ?? scoreAttackBestScore ?? 0),
-    scoreEvents: data.scoreEvents || ""
-  };
-
-  fetch("https://default8de80de86d8a47cbb5bc7fb9b5bf1c.64.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/239b526e4b9f4c1997a009d53a32267a/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=qQhDuP6P3K8mxdCKyBaMw6S0IPd8rBn8BUAEi_CtlxQ", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(payload)
-  }).catch(err => console.log("Telemetry failed:", err));
+// =============================================
+// LOCAL QUESTION TELEMETRY — NO NETWORK TRANSMISSION
+// =============================================
+const TELEMETRY_PREFIX = "strategyDeskTelemetry_";
+const TELEMETRY_VERSION = "StrategyDesk-local-telemetry-v4-hashed-bank";
+const GAME_VERSION = "Strategy-Desk-2026.07.25.1";
+const TELEMETRY_COLUMNS = [
+    "eventID","timestamp","telemetryVersion","gameVersion","runID","game","mode","event",
+    "room","questionID","questionVersion","difficulty","selectedIndex","correct",
+    "rapidGuessing","tag","type","objective","responseTimeMs","attempt","streak",
+    "elapsedTimeMs","adaptiveMode","remediationStage","priorExposureCount",
+    "firstExposure","score","bestScore","totalTimeMs","accuracy","maxStreak",
+    "totalAttempts","verificationCode"
+];
+function createTelemetryEventID(){
+    if(window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
+    return `evt-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+function getTelemetryKey(activeRunID = runID){
+    return `${TELEMETRY_PREFIX}${activeRunID || "unknown-run"}`;
+}
+function readLocalTelemetry(activeRunID = runID){
+    try {
+        const raw = localStorage.getItem(getTelemetryKey(activeRunID));
+        return raw ? JSON.parse(raw) : [];
+    } catch(error) {
+        console.warn("Telemetry could not be read:", error);
+        return [];
+    }
+}
+function sendGameData(data = {}){
+    try {
+        const activeRunID = data.runID || runID || localStorage.getItem("strategyDeskRunID")
+            || `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        if(!runID) runID = activeRunID;
+        const records = readLocalTelemetry(activeRunID);
+        const questionID = Number(data.questionId ?? data.question ?? 0);
+        const normalizedMode = String(data.mode || gameMode || "standard").replace(/-complete$/, "");
+        const eventName = data.event || "";
+        const isResponseEvent = eventName === "question";
+        const isCompletionEvent = /(?:^|_)complete$/.test(eventName);
+        const priorExposureCount = questionID > 0
+            ? records.filter(item => Number(item.questionID) === questionID && item.event === "question").length
+            : 0;
+        const record = {
+            eventID: createTelemetryEventID(),
+            timestamp: new Date().toISOString(),
+            telemetryVersion: TELEMETRY_VERSION,
+            gameVersion: GAME_VERSION,
+            runID: activeRunID,
+            game: data.game || "The Strategy Desk",
+            mode: normalizedMode,
+            event: eventName,
+            room: Number(data.room ?? room ?? 0),
+            questionID,
+            questionVersion: Number(data.questionVersion ?? currentQuestion?.version ?? 1),
+            difficulty: data.difficulty || currentQuestion?.difficulty || (typeof getDifficultyForMode === "function" ? getDifficultyForMode() : ""),
+            selectedIndex: isResponseEvent ? Number(data.selectedIndex ?? -1) : -1,
+            correct: isResponseEvent ? Number(data.correct ?? 0) : 0,
+            rapidGuessing: isResponseEvent ? Number(data.rapidGuessing ?? 0) : 0,
+            tag: data.tag || "",
+            type: data.type || "",
+            objective: data.objective || "",
+            responseTimeMs: Number(data.responseTime ?? data.responseTimeMs ?? 0),
+            attempt: Number(data.attempt ?? 0),
+            streak: Number(data.streak ?? 0),
+            elapsedTimeMs: isCompletionEvent ? Number(data.totalTime ?? data.totalTimeMs ?? 0) : Number(data.elapsedTime ?? data.elapsedTimeMs ?? 0),
+            adaptiveMode: data.adaptiveMode || adaptiveMode || "",
+            remediationStage: data.remediationStage || (remediationState?.active ? remediationState.stage || "" : ""),
+            priorExposureCount,
+            firstExposure: questionID > 0 && priorExposureCount === 0 ? 1 : 0,
+            score: Number(data.score ?? scoreAttackScore ?? 0),
+            bestScore: Number(data.bestScore ?? scoreAttackBestScore ?? 0),
+            totalTimeMs: Number(data.totalTime ?? data.totalTimeMs ?? 0),
+            accuracy: Number(data.accuracy ?? 0),
+            maxStreak: Number(data.maxStreak ?? 0),
+            totalAttempts: Number(data.totalAttempts ?? data.attempts ?? 0),
+            verificationCode: data.verificationCode || data.code || ""
+        };
+        records.push(record);
+        if(records.length > 1500) records.splice(0, records.length - 1500);
+        localStorage.setItem(getTelemetryKey(activeRunID), JSON.stringify(records));
+        localStorage.setItem("strategyDeskLatestTelemetryRunID", activeRunID);
+    } catch(error) {
+        console.warn("Local telemetry could not be saved:", error);
+    }
+}
+function escapeCsvValue(value){
+    if(value === null || value === undefined) return '""';
+    return `"${String(value).replace(/"/g, '""')}"`;
+}
+function downloadTelemetryCsv(activeRunID = runID){
+    const resolvedRunID = activeRunID || localStorage.getItem("strategyDeskLatestTelemetryRunID") || "unknown-run";
+    const records = readLocalTelemetry(resolvedRunID);
+    if(!records.length){
+        alert("No game data is available for this run.");
+        return;
+    }
+    const rows = [
+        TELEMETRY_COLUMNS.join(","),
+        ...records.map(record => TELEMETRY_COLUMNS.map(column => escapeCsvValue(record[column])).join(","))
+    ];
+    const csv = rows.join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const safeMode = String(records[records.length - 1]?.mode || gameMode || "run")
+        .replace(/[^a-z0-9_-]+/gi, "-").toLowerCase();
+    link.href = url;
+    link.download = `strategy-desk_${safeMode}_${resolvedRunID}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
    
 // =====================================================
