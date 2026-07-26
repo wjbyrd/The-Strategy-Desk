@@ -3374,6 +3374,25 @@ function modeAllowsRealmProgress(){
     return gameMode === "standard";
 }
 
+function isRealmMissionComplete(){
+    return localStorage.getItem(REALM_COMPLETE_KEY) === "true";
+}
+
+function syncRealmAttemptState(){
+    if(!modeAllowsRealmProgress()) return;
+
+    localStorage.setItem(REALM_STARTED_KEY, "true");
+
+    if(isRealmMissionComplete()){
+        localStorage.setItem(REALM_STATUS_KEY, "restored");
+        localStorage.setItem(REALM_ROOM_KEY, "30");
+        return;
+    }
+
+    localStorage.setItem(REALM_STATUS_KEY, "contested");
+    localStorage.setItem(REALM_ROOM_KEY, String(room || 1));
+}
+
 function getSaveKey(){
     return `${SAVE_KEY}_${gameMode || "standard"}`;
 }
@@ -3615,11 +3634,7 @@ function saveGameState(){
 
     localStorage.setItem(getSaveKey(), JSON.stringify(saveData));
 
-    if(modeAllowsRealmProgress()){
-        localStorage.setItem(REALM_STARTED_KEY, "true");
-        localStorage.setItem(REALM_STATUS_KEY, "contested");
-        localStorage.setItem(REALM_ROOM_KEY, String(room));
-    }
+    syncRealmAttemptState();
 
     const autosave = document.getElementById("autosave");
     if(autosave){
@@ -5090,11 +5105,7 @@ function startGame(shouldResume = false, requestedMode = null) {
     if(!username) username = generatePseudonymFromSeed(runID || Date.now());
     localStorage.setItem("strategyDeskUser", username);
     localStorage.setItem("strategyDeskRunID", runID);
-    if(modeAllowsRealmProgress()){
-        localStorage.setItem(REALM_STARTED_KEY, "true");
-        localStorage.setItem(REALM_STATUS_KEY, "contested");
-        localStorage.setItem(REALM_ROOM_KEY, String(room || 1));
-    }
+    syncRealmAttemptState();
 
     sendGameData({
         runID: runID,
@@ -5129,13 +5140,13 @@ function startGame(shouldResume = false, requestedMode = null) {
         bossesDefeatedThisRun = 0;
 
         if(modeAllowsRealmProgress()){
-            localStorage.removeItem("strategyDeskVaultElasticityCompass");
-            localStorage.removeItem("strategyDeskVaultSegmentationSeal");
-            localStorage.removeItem("strategyDeskVaultBargainingLedger");
-            localStorage.removeItem(REALM_COMPLETE_KEY);
-            localStorage.setItem(REALM_STATUS_KEY, "contested");
-            localStorage.setItem(REALM_ROOM_KEY, "1");
+            if(!isRealmMissionComplete()){
+                localStorage.removeItem("strategyDeskVaultElasticityCompass");
+                localStorage.removeItem("strategyDeskVaultSegmentationSeal");
+                localStorage.removeItem("strategyDeskVaultBargainingLedger");
+            }
         }
+        syncRealmAttemptState();
 
         questionHistory = {
             easy: [], medium: [], hard: [], elite: [], legendary: [], calculation: [],
@@ -5401,6 +5412,7 @@ function updateTimedModeClock(){
 function endTimedModeRun(){
     if(gameMode !== "timed") return;
 
+    beginRunSession();
     stopTimedModeClock();
     gameMode = "timed-complete";
 
@@ -8670,5 +8682,4 @@ function downloadTelemetryCsv(activeRunID = runID){
 
 </script></body>
 </html>
-
 
