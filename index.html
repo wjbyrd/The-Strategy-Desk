@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- STRATEGY DESK — SHARED-ENGINE REPAIR BUILD 20260718_1 -->
+<!-- STRATEGY DESK — SHARED-ENGINE REPAIR BUILD 20260725 -->
 <!-- =====================================================
 GAUNTLET ENGINE — MASTER TEMPLATE
 
@@ -6475,7 +6475,9 @@ async function answer(choice) {
     let isCorrect = false;
     try {
         isCorrect = await isQuestionAnswerCorrect(currentQuestion, choice);
+        if(answerSessionId !== runSessionId) return;
     } catch(error) {
+        if(answerSessionId !== runSessionId) return;
         console.error("Answer verification failed:", error);
         answerSubmissionPending = false;
         setAnswerButtonsDisabled(false);
